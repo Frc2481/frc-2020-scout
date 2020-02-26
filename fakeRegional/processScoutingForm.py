@@ -380,7 +380,7 @@ if __name__== "__main__":
     matchScheduleFilename = "matchSchedule.csv"
     matchScheduleFilepath = os.path.join(workDir, matchScheduleFilename)
     
-    outputFilename = "Raw Form Data.csv"
+    outputFilename = "rawFormData.csv"
     outputFilepath = os.path.join(workDir, outputFilename)
     
     CreateOutputFileFromMatchSchedule(matchScheduleFilepath, outputFilepath)
