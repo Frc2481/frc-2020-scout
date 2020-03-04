@@ -7,6 +7,7 @@ import copy
 import sys
 
 showImages = False
+height = 1000
 
 class ScoutingFormData:
     def __init__(self):
@@ -37,9 +38,9 @@ def FormatBlankData(data):
 
 
 def ResizeImg(img, heightDesired):
-    height, width, channels = img.shape
+    imgHeight, imgWidth, channels = img.shape
 
-    ratio = width / height
+    ratio = imgWidth / imgHeight
     widthDesired = heightDesired * ratio
 
     img = cv2.resize(img, (int(widthDesired), int(heightDesired)))
@@ -47,13 +48,15 @@ def ResizeImg(img, heightDesired):
 
 def CropToForm(img):
     # resize image to consistent size
-    height = 2000
+    
     img = ResizeImg(img, height)
     
     # crop image to form
-    cropWidth = int(height * 0.16)
-    cropHeight = int(height * 0.09)
-    imgCrop = img[cropHeight:, cropWidth:]
+    cropWidthMin = int(height * 8.5 / 11 * 0.20)
+    cropWidthMax = int(height * 8.5 / 11 * 0.97)
+    cropHeightMin = int(height * 0.09)
+    cropHeightMax = int(height * 0.95)
+    imgCrop = img[cropHeightMin:cropHeightMax, cropWidthMin:cropWidthMax]
 
     if showImages:
         cv2.imshow("imgCrop", imgCrop)
@@ -64,13 +67,14 @@ def CropToForm(img):
 def FindBubbles(img):
     # fill in bubbles
     imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    imgEdge = cv2.Canny(img, 75, 200)
+    imgThreshGray = cv2.threshold(imgGray, 150, 255, cv2.THRESH_TRUNC)[1]
+    imgEdge = cv2.Canny(imgThreshGray, 1, 150)
 
     contours, hierarchy = cv2.findContours(imgEdge, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
-    radThreshMin = 15
-    radThreshMax = 30
-    imgGrayFill = imgGray.copy()
+    radThreshMin = height * 0.009 * 0.7
+    radThreshMax = height * 0.009 * 2
+    imgGrayFill = imgThreshGray.copy()
     for c in contours:
         (x, y), rad = cv2.minEnclosingCircle(c)
 
@@ -79,32 +83,37 @@ def FindBubbles(img):
 
     # count bubbles
     imgThreshFill = cv2.threshold(imgGrayFill, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+
+    if showImages:
+        cv2.imshow("imgThreshGray", imgThreshGray)
+        cv2.imshow("imgEdge", imgEdge)
+        cv2.imshow("imgGrayFill", imgGrayFill)
+    
     contours, hierarchy = cv2.findContours(imgThreshFill, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
 
     bubbleContours = []
     bubbleCount = 0
-    height, width = imgThreshFill.shape
+    shapeHeight, shapeWidth = imgThreshFill.shape
     for c in contours:
         (x, y), rad = cv2.minEnclosingCircle(c)
 
         edgePercentThresh = 0.01
-        if rad < radThreshMax and rad > radThreshMin and x > width * edgePercentThresh \
-            and x < width * (1 - edgePercentThresh) and y > height * edgePercentThresh and y < height * (1 - edgePercentThresh):
+        if rad < radThreshMax and rad > radThreshMin and x > shapeWidth * edgePercentThresh \
+            and x < shapeWidth * (1 - edgePercentThresh) and y > shapeHeight * edgePercentThresh and y < shapeHeight * (1 - edgePercentThresh):
 
             bubbleContours.append(c)
             bubbleCount += 1
-
-    expectedBubbleCount = 219
-    if bubbleCount != expectedBubbleCount:
-        print("\033[91m" + "Error incorrect bubble count" + "\033[0m")
-        return [], True
 
     imgBubbleHighlight = img.copy()
     cv2.drawContours(imgBubbleHighlight, bubbleContours, -1, (0, 0, 255), 3)
 
     if showImages:
-        cv2.imshow("imgGrayFill", imgGrayFill)
         cv2.imshow("imgBubbleHighlight", imgBubbleHighlight)
+
+    expectedBubbleCount = 219
+    if bubbleCount != expectedBubbleCount:
+        print("\033[91m" + "Error incorrect bubble count" + "\033[0m")
+        return [], True
 
     return bubbleContours, False
 
@@ -117,7 +126,7 @@ def ReadScoutingFormData(img, bubbleContours):
     bubbleContours = [x for (y, x) in sorted(zip(bubbleY, bubbleContours), key=lambda pair: pair[0])]
 
     # find number of bubbles in each row
-    heightDiffThresh = 30
+    heightDiffThresh = height * 0.018 * 0.8
     bubbleMatrix = []
     bubbleCount = 0
     (x, yOld), rad = cv2.minEnclosingCircle(bubbleContours[0])
