@@ -6,8 +6,9 @@ import csv
 import copy
 import sys
 
-showImages = False
+showImages = True
 height = 1000
+bubbleRad = height * 0.009
 
 class ScoutingFormData:
     def __init__(self):
@@ -19,7 +20,8 @@ class ScoutingFormData:
         self.autoHighOuter = ""
         self.autoHighInner = ""
         self.teleopLow = ""
-        self.teleopHigh = ""
+        self.teleopHighOuter = ""
+        self.teleopHighInner = ""
         self.shootLocation = ""
         self.controlPanel2 = ""
         self.controlPanel3 = ""
@@ -38,7 +40,7 @@ def FormatBlankData(data):
 
 
 def ResizeImg(img, heightDesired):
-    imgHeight, imgWidth, channels = img.shape
+    imgHeight, imgWidth = img.shape
 
     ratio = imgWidth / imgHeight
     widthDesired = heightDesired * ratio
@@ -47,14 +49,10 @@ def ResizeImg(img, heightDesired):
     return img
 
 def CropToForm(img):
-    # resize image to consistent size
-    
-    img = ResizeImg(img, height)
-    
     # crop image to form
-    cropWidthMin = int(height * 8.5 / 11 * 0.20)
-    cropWidthMax = int(height * 8.5 / 11 * 0.97)
-    cropHeightMin = int(height * 0.09)
+    cropWidthMin = int(height * 8.5 / 11 * 0.15)
+    cropWidthMax = int(height * 8.5 / 11 * 0.95)
+    cropHeightMin = int(height * 0.05)
     cropHeightMax = int(height * 0.95)
     imgCrop = img[cropHeightMin:cropHeightMax, cropWidthMin:cropWidthMax]
 
@@ -65,120 +63,104 @@ def CropToForm(img):
 
 
 def FindBubbles(img):
-    # fill in bubbles
-    imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    imgThreshGray = cv2.threshold(imgGray, 150, 255, cv2.THRESH_TRUNC)[1]
-    imgEdge = cv2.Canny(imgThreshGray, 1, 150)
+    # set detector parameters
+    params = cv2.SimpleBlobDetector_Params()
+    params.minDistBetweenBlobs = bubbleRad * 2 * 0.8
+    params.minThreshold = 127
+    params.maxThreshold = 255
 
-    contours, hierarchy = cv2.findContours(imgEdge, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    params.filterByArea = True
+    params.minArea = np.pi * (bubbleRad * 0.7) ** 2
+    params.maxArea = np.pi * (bubbleRad * 2) ** 2
 
-    radThreshMin = height * 0.009 * 0.7
-    radThreshMax = height * 0.009 * 2
-    imgGrayFill = imgThreshGray.copy()
-    for c in contours:
-        (x, y), rad = cv2.minEnclosingCircle(c)
+    params.filterByCircularity = False
+    params.minCircularity = 0
+    params.maxCircularity = 1
 
-        if rad < radThreshMax and rad > radThreshMin:
-            imgGrayFill = cv2.circle(imgGrayFill, (int(x), int(y)), int(rad), color=(0, 0, 0), thickness=-1, lineType=8, shift=0)
+    params.filterByColor = False
+    params.blobColor = 0
 
-    # count bubbles
-    imgThreshFill = cv2.threshold(imgGrayFill, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    params.filterByConvexity = False
+    params.minConvexity = 0
+    params.maxConvexity = 1
 
-    if showImages:
-        cv2.imshow("imgThreshGray", imgThreshGray)
-        cv2.imshow("imgEdge", imgEdge)
-        cv2.imshow("imgGrayFill", imgGrayFill)
+    params.filterByInertia = True
+    params.minInertiaRatio = 0.7
+    params.maxInertiaRatio = 1
     
-    contours, hierarchy = cv2.findContours(imgThreshFill, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    # find bubbles
+    detector = cv2.SimpleBlobDetector_create(params)
+    keypoints = detector.detect(img)
+    imgBubbles = cv2.drawKeypoints(img, keypoints, np.array([]), (0, 0, 255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-    bubbleContours = []
-    bubbleCount = 0
-    shapeHeight, shapeWidth = imgThreshFill.shape
-    for c in contours:
-        (x, y), rad = cv2.minEnclosingCircle(c)
-
-        edgePercentThresh = 0.01
-        if rad < radThreshMax and rad > radThreshMin and x > shapeWidth * edgePercentThresh \
-            and x < shapeWidth * (1 - edgePercentThresh) and y > shapeHeight * edgePercentThresh and y < shapeHeight * (1 - edgePercentThresh):
-
-            bubbleContours.append(c)
-            bubbleCount += 1
-
-    imgBubbleHighlight = img.copy()
-    cv2.drawContours(imgBubbleHighlight, bubbleContours, -1, (0, 0, 255), 3)
+    # sort bubbles found by y value
+    keypointsArray = []
+    for k in keypoints:
+        keypointsArray.append([k.pt[0], k.pt[1], k.size])
+    sortedKeypoints = sorted(keypoints, key=lambda x: x.pt[1])
 
     if showImages:
-        cv2.imshow("imgBubbleHighlight", imgBubbleHighlight)
+        cv2.imshow("imgBubbles", imgBubbles)
 
-    expectedBubbleCount = 219
+    # check total number of bubbles found
+    bubbleCount = len(keypoints)
+    expectedBubbleCount = 220
     if bubbleCount != expectedBubbleCount:
         print("\033[91m" + "Error incorrect bubble count" + "\033[0m")
         return [], True
-
-    return bubbleContours, False
-
-
-def ReadScoutingFormData(img, bubbleContours):
-    bubbleY = []
-    for c in bubbleContours:
-        (x, y), rad = cv2.minEnclosingCircle(c)
-        bubbleY.append(y)
-    bubbleContours = [x for (y, x) in sorted(zip(bubbleY, bubbleContours), key=lambda pair: pair[0])]
-
-    # find number of bubbles in each row
-    heightDiffThresh = height * 0.018 * 0.8
+    
+    # check bubbles found in each row
     bubbleMatrix = []
-    bubbleCount = 0
-    (x, yOld), rad = cv2.minEnclosingCircle(bubbleContours[0])
-    for c in bubbleContours:
-        (x, y), rad = cv2.minEnclosingCircle(c)
-        if (y - yOld) > heightDiffThresh:
-            bubbleMatrix.append(bubbleCount)
-            bubbleCount = 0
-        bubbleCount += 1
-        yOld = y
-    bubbleMatrix.append(bubbleCount)
+    rowBubbleCount = 0
+    yOld = sortedKeypoints[0].pt[1]
+    for k in sortedKeypoints:
+        if (k.pt[1] - yOld) > params.minDistBetweenBlobs:
+            bubbleMatrix.append(rowBubbleCount)
+            rowBubbleCount = 0
+        rowBubbleCount += 1
+        yOld = k.pt[1]
+    bubbleMatrix.append(rowBubbleCount)
 
-    expectedBubbleMatrix = [10, 10, 10, 10, 10, 10, 10, 3, 1, 13, 13, 13, 17, 17, 17, 17, 16, 3, 1, 1, 3, 10, 2, 1, 1]
+    expectedBubbleMatrix = [10, 10, 10, 10, 10, 10, 10, 3, 1, 13, 13, 13, 17, 17, 17, 17, 17, 3, 1, 1, 3, 10, 2, 1, 1]
     if bubbleMatrix != expectedBubbleMatrix:
         print("\033[91m" + "Error incorrect bubble matrix" + "\033[0m")
         return [], True
 
-    # find row values
-    imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    imgThresh = cv2.threshold(imgGray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    return sortedKeypoints, bubbleMatrix, False
 
-    bubbleFillThreshPercent = 0.5
+def FindFilledBubbles(img, sortedKeypoints, bubbleMatrix):
+    # find filled bubbles
+    imgThresh = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)[1]
+
+    bubbleFillThreshPercent = 0.7
     bubbleMatrix2 = []
     totalBubbleCount = 0
     for c2 in bubbleMatrix:
         bubbleCount = 0
         rowValue = []
+        
+        # sort row by x value
+        sortedKeypointsRow = sortedKeypoints[totalBubbleCount:totalBubbleCount + c2]
+        sortedKeypointsRow = sorted(sortedKeypointsRow, key=lambda x: x.pt[0])
 
-        bubbleX = []
-        rowBubbleContours = bubbleContours[totalBubbleCount:totalBubbleCount + c2]
-        for c in rowBubbleContours:
-            (x, y), rad = cv2.minEnclosingCircle(c)
-            bubbleX.append(x)
-        rowBubbleContours = [x for (y, x) in sorted(zip(bubbleX, rowBubbleContours), key=lambda pair: pair[0])]
-
-        for c in rowBubbleContours:
+        for k in sortedKeypointsRow:
             bubbleCount += 1
-            
-            area = cv2.contourArea(c)
 
-            mask = np.zeros(imgThresh.shape, dtype="uint8")
-            cv2.drawContours(mask, [c], -1, 255, -1)
-            mask = cv2.bitwise_and(imgThresh, imgThresh, mask=mask)
-            fillPixels = cv2.countNonZero(mask)
-            percentFill = (fillPixels / area)
+            mask = np.zeros(img.shape, dtype="uint8")
+            mask = cv2.circle(mask, (int(k.pt[0]), int(k.pt[1])), int(bubbleRad), 255, -1)
+            mask2 = cv2.bitwise_and(imgThresh, imgThresh, mask=mask)
+            percentFill = 1 - (cv2.countNonZero(mask2) / cv2.countNonZero(mask))
 
             if percentFill > bubbleFillThreshPercent:
                 rowValue = bubbleCount
 
         bubbleMatrix2.append(rowValue)
         totalBubbleCount += c2
+    
+    return bubbleMatrix2, False
 
+
+def ReadScoutingFormData(bubbleMatrix2):
     # convert bubble data to form data
     scoutingFormData = ScoutingFormData()
     if bubbleMatrix2[0] and bubbleMatrix2[1] and bubbleMatrix2[2] and bubbleMatrix2[3]:
@@ -210,18 +192,17 @@ def ReadScoutingFormData(img, bubbleContours):
     scoutingFormData.autoLow = FormatBlankData(bubbleMatrix2[9])
     scoutingFormData.autoHighOuter = FormatBlankData(bubbleMatrix2[10])
     scoutingFormData.autoHighInner = FormatBlankData(bubbleMatrix2[11])
+    scoutingFormData.teleopLow = FormatBlankData(bubbleMatrix2[12])
 
-    if bubbleMatrix2[13]:
-        scoutingFormData.teleopLow = bubbleMatrix2[13]
+    if bubbleMatrix2[14]:
+        scoutingFormData.teleopHighOuter = bubbleMatrix2[14] + 17
     else:
-        scoutingFormData.teleopLow = FormatBlankData(bubbleMatrix2[12])
+        scoutingFormData.teleopHighOuter = FormatBlankData(bubbleMatrix2[13])
 
     if bubbleMatrix2[16]:
-        scoutingFormData.teleopHigh = bubbleMatrix2[16]
+        scoutingFormData.teleopHighInner = bubbleMatrix2[16] + 17
     elif bubbleMatrix2[15]:
-        scoutingFormData.teleopHigh = bubbleMatrix2[15]
-    else:
-        scoutingFormData.teleopHigh = FormatBlankData(bubbleMatrix2[14])
+        scoutingFormData.teleopHighInner = FormatBlankData(bubbleMatrix2[15])
 
     if bubbleMatrix2[17]:
         scoutingFormData.shootLocation = bubbleMatrix2[17]
@@ -296,7 +277,8 @@ def CreateOutputFileFromMatchSchedule(matchScheduleFilepath, outputFilepath):
             "Auto High Outer Goals",
             "Auto High Inner Goals",
             "Teleop Low Goals",
-            "Teleop High Goals",
+            "Teleop High Outer Goals",
+            "Teleop High Inner Goals"
             "Shoot Location",
             "Control Panel 2",
             "Control Panel 3",
@@ -318,7 +300,8 @@ def CreateOutputFileFromMatchSchedule(matchScheduleFilepath, outputFilepath):
                 match.autoHighOuter,
                 match.autoHighInner,
                 match.teleopLow,
-                match.teleopHigh,
+                match.teleopHighOuter,
+                match.teleopHighInner,
                 match.shootLocation,
                 match.controlPanel2,
                 match.controlPanel3,
@@ -357,15 +340,16 @@ def WriteScoutingFormDataToOutputFile(scoutingFormData, outputFilepath):
                     tempRow[5] = scoutingFormData.autoHighOuter
                     tempRow[6] = scoutingFormData.autoHighInner
                     tempRow[7] = scoutingFormData.teleopLow
-                    tempRow[8] = scoutingFormData.teleopHigh
-                    tempRow[9] = scoutingFormData.shootLocation
-                    tempRow[10] = scoutingFormData.controlPanel2
-                    tempRow[11] = scoutingFormData.controlPanel3
-                    tempRow[12] = scoutingFormData.climb
-                    tempRow[13] = scoutingFormData.foul
-                    tempRow[14] = scoutingFormData.card
-                    tempRow[15] = scoutingFormData.disabled
-                    tempRow[16] = scoutingFormData.playedDefense
+                    tempRow[8] = scoutingFormData.teleopHighOuter
+                    tempRow[9] = scoutingFormData.teleopHighInner
+                    tempRow[10] = scoutingFormData.shootLocation
+                    tempRow[11] = scoutingFormData.controlPanel2
+                    tempRow[12] = scoutingFormData.controlPanel3
+                    tempRow[13] = scoutingFormData.climb
+                    tempRow[14] = scoutingFormData.foul
+                    tempRow[15] = scoutingFormData.card
+                    tempRow[16] = scoutingFormData.disabled
+                    tempRow[17] = scoutingFormData.playedDefense
 
             tempData.append(row)
             rowCnt += 1
@@ -405,21 +389,26 @@ if __name__== "__main__":
             print()
             print("\033[95m" + "Processing " + unprocessedFilename + "..." + "\033[0m")
             
-            img = cv2.imread(unprocessedFilepath, cv2.IMREAD_COLOR)
+            img = cv2.imread(unprocessedFilepath, cv2.IMREAD_GRAYSCALE)
             if img is None:
                 print("\033[91m" + "Error failed to read image" + "\033[0m")
                 continue
 
+            img = ResizeImg(img, height)
             if showImages:
-                cv2.imshow("imgThresh", img)
+                cv2.imshow("img", img)
+            
+            # imgCrop = CropToForm(img)
 
-            imgCrop = CropToForm(img)
-
-            bubbleContours, isError = FindBubbles(imgCrop)
+            sortedKeypoints, bubbleMatrix, isError = FindBubbles(img)
             if isError:
                 continue
 
-            scoutingFormData, isError = ReadScoutingFormData(imgCrop, bubbleContours)
+            bubbleMatrix2, isError = FindFilledBubbles(img, sortedKeypoints, bubbleMatrix)
+            if isError:
+                continue
+
+            scoutingFormData, isError = ReadScoutingFormData(bubbleMatrix2)
             if isError:
                 continue
                 
