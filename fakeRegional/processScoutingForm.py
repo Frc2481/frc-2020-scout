@@ -6,7 +6,7 @@ import csv
 import copy
 import sys
 
-showImages = True
+showImages = False
 height = 1000
 bubbleRad = height * 0.009
 
@@ -201,14 +201,10 @@ def ReadScoutingFormData(bubbleMatrix2):
 
     if bubbleMatrix2[16]:
         scoutingFormData.teleopHighInner = bubbleMatrix2[16] + 17
-    elif bubbleMatrix2[15]:
+    else:
         scoutingFormData.teleopHighInner = FormatBlankData(bubbleMatrix2[15])
 
-    if bubbleMatrix2[17]:
-        scoutingFormData.shootLocation = bubbleMatrix2[17]
-    else:
-        print("\033[91m" + "Error shoot location not defined" + "\033[0m")
-        return [], True
+    scoutingFormData.shootLocation = FormatBlankData(bubbleMatrix2[17])
 
     scoutingFormData.controlPanel2 = FormatBlankData(bubbleMatrix2[18])
     scoutingFormData.controlPanel3 = FormatBlankData(bubbleMatrix2[19])
@@ -278,7 +274,7 @@ def CreateOutputFileFromMatchSchedule(matchScheduleFilepath, outputFilepath):
             "Auto High Inner Goals",
             "Teleop Low Goals",
             "Teleop High Outer Goals",
-            "Teleop High Inner Goals"
+            "Teleop High Inner Goals",
             "Shoot Location",
             "Control Panel 2",
             "Control Panel 3",
