@@ -6,7 +6,7 @@ import csv
 import copy
 import sys
 
-showImages = False
+showImages = True
 height = 1000
 bubbleRad = height * 0.009
 
@@ -31,13 +31,11 @@ class ScoutingFormData:
         self.disabled = ""
         self.playedDefense = ""
 
-
 def FormatBlankData(data):
     if not data:
         data = 0
 
     return data
-
 
 def ResizeImg(img, heightDesired):
     imgHeight, imgWidth = img.shape
@@ -60,7 +58,6 @@ def CropToForm(img):
         cv2.imshow("imgCrop", imgCrop)
 
     return imgCrop
-
 
 def FindBubbles(img):
     # set detector parameters
@@ -159,7 +156,6 @@ def FindFilledBubbles(img, sortedKeypoints, bubbleMatrix):
     
     return bubbleMatrix2, False
 
-
 def ReadScoutingFormData(bubbleMatrix2):
     # convert bubble data to form data
     scoutingFormData = ScoutingFormData()
@@ -215,7 +211,6 @@ def ReadScoutingFormData(bubbleMatrix2):
     scoutingFormData.playedDefense = FormatBlankData(bubbleMatrix2[24])
 
     return scoutingFormData, False
-
 
 def CreateOutputFileFromMatchSchedule(matchScheduleFilepath, outputFilepath):
     # read match schedule
@@ -311,7 +306,6 @@ def CreateOutputFileFromMatchSchedule(matchScheduleFilepath, outputFilepath):
     print("\033[92m" + "Processed match schedule" + "\033[0m")
     return
 
-
 def WriteScoutingFormDataToOutputFile(scoutingFormData, outputFilepath):
     with open(outputFilepath, "r",  newline="") as csvFile:
         csvReader = csv.reader(csvFile, delimiter=",")
@@ -360,7 +354,6 @@ def WriteScoutingFormDataToOutputFile(scoutingFormData, outputFilepath):
         csvWriter.writerows(tempData)
 
     return False
-
 
 if __name__== "__main__":
     workDir = os.getcwd()
