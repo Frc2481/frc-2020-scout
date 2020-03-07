@@ -104,7 +104,7 @@ def FindBubbles(img):
     expectedBubbleCount = 220
     if bubbleCount != expectedBubbleCount:
         print("\033[91m" + "Error incorrect bubble count" + "\033[0m")
-        return [], True
+        return [], [], True
     
     # check bubbles found in each row
     bubbleMatrix = []
@@ -121,7 +121,7 @@ def FindBubbles(img):
     expectedBubbleMatrix = [10, 10, 10, 10, 10, 10, 10, 3, 1, 13, 13, 13, 17, 17, 17, 17, 17, 3, 1, 1, 3, 10, 2, 1, 1]
     if bubbleMatrix != expectedBubbleMatrix:
         print("\033[91m" + "Error incorrect bubble matrix" + "\033[0m")
-        return [], True
+        return [], [], True
 
     return sortedKeypoints, bubbleMatrix, False
 
@@ -387,7 +387,7 @@ if __name__== "__main__":
             if showImages:
                 cv2.imshow("img", img)
             
-            # imgCrop = CropToForm(img)
+            img = CropToForm(img)
 
             sortedKeypoints, bubbleMatrix, isError = FindBubbles(img)
             if isError:
